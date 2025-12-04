@@ -1,0 +1,253 @@
+-- Fix get_deal_detail RPC by removing reference to non-existent deal_attachments table
+
+CREATE OR REPLACE FUNCTION get_deal_detail(p_deal_id UUID)
+RETURNS JSON
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_deal JSON;
+  v_company_id UUID;
+  v_quotes JSON;
+  v_invoices JSON;
+  v_deal_notes JSON;
+  v_appointments JSON;
+  v_proposal_attachments JSON;
+BEGIN
+  -- Get deal with contact and service_address
+  SELECT json_build_object(
+    'id', d.id,
+    'company_id', d.company_id,
+    'contact_id', d.contact_id,
+    'contact_address_id', d.contact_address_id,
+    'first_name', d.first_name,
+    'last_name', d.last_name,
+    'email', d.email,
+    'phone', d.phone,
+    'lead_source', d.lead_source,
+    'stage', d.stage,
+    'salesperson', d.salesperson,
+    'project_manager', d.project_manager,
+    'assigned_to', d.assigned_to,
+    'crew_id', d.crew_id,
+    'event_color', d.event_color,
+    'send_email', d.send_email,
+    'send_sms', d.send_sms,
+    'disable_drips', d.disable_drips,
+    'archived_at', d.archived_at,
+    'created_at', d.created_at,
+    'updated_at', d.updated_at,
+    'contact', CASE WHEN c.id IS NOT NULL THEN json_build_object(
+      'id', c.id,
+      'company_id', c.company_id,
+      'first_name', c.first_name,
+      'last_name', c.last_name,
+      'email', c.email,
+      'phone', c.phone,
+      'addresses', COALESCE(
+        (SELECT json_agg(json_build_object(
+          'id', ca_addr.id,
+          'address_line1', ca_addr.address_line1,
+          'address_line2', ca_addr.address_line2,
+          'city', ca_addr.city,
+          'state', ca_addr.state,
+          'postal_code', ca_addr.postal_code,
+          'country', ca_addr.country
+        ))
+        FROM contact_addresses ca_addr
+        WHERE ca_addr.contact_id = c.id),
+        '[]'::json
+      )
+    ) ELSE NULL END,
+    'service_address', CASE WHEN ca.id IS NOT NULL THEN json_build_object(
+      'id', ca.id,
+      'address_line1', ca.address_line1,
+      'address_line2', ca.address_line2,
+      'city', ca.city,
+      'state', ca.state,
+      'postal_code', ca.postal_code
+    ) ELSE NULL END,
+    'latest_appointment', (
+      SELECT json_build_object(
+        'id', a.id,
+        'scheduled_start', a.scheduled_start,
+        'scheduled_end', a.scheduled_end,
+        'assigned_to', a.assigned_to,
+        'crew_id', a.crew_id,
+        'event_color', a.event_color,
+        'appointment_notes', a.appointment_notes,
+        'send_email', a.send_email,
+        'send_sms', a.send_sms
+      )
+      FROM appointments a
+      WHERE a.deal_id = d.id
+      ORDER BY a.scheduled_start DESC
+      LIMIT 1
+    )
+  ), d.company_id INTO v_deal, v_company_id
+  FROM deals d
+  LEFT JOIN contacts c ON d.contact_id = c.id
+  LEFT JOIN contact_addresses ca ON d.contact_address_id = ca.id
+  WHERE d.id = p_deal_id;
+
+  IF v_deal IS NULL THEN
+    RAISE EXCEPTION 'Deal not found';
+  END IF;
+
+  -- Get quotes with line items
+  SELECT COALESCE(json_agg(
+    json_build_object(
+      'id', q.id,
+      'company_id', q.company_id,
+      'deal_id', q.deal_id,
+      'quote_number', q.quote_number,
+      'title', q.title,
+      'client_message', q.client_message,
+      'disclaimer', q.disclaimer,
+      'status', q.status,
+      'public_share_id', q.public_share_id,
+      'acceptance_signature', q.acceptance_signature,
+      'acceptance_signed_at', q.acceptance_signed_at,
+      'created_at', q.created_at,
+      'updated_at', q.updated_at,
+      'line_items', COALESCE(
+        (SELECT json_agg(
+          json_build_object(
+            'id', li.id,
+            'quote_id', li.quote_id,
+            'name', li.name,
+            'description', li.description,
+            'quantity', li.quantity,
+            'unit_price', li.unit_price,
+            'position', li.position,
+            'change_order_id', li.change_order_id,
+            'is_change_order', li.is_change_order
+          ) ORDER BY li.position
+        ) FROM quote_line_items li WHERE li.quote_id = q.id),
+        '[]'::json
+      )
+    ) ORDER BY q.created_at DESC
+  ), '[]'::json) INTO v_quotes
+  FROM quotes q
+  WHERE q.deal_id = p_deal_id;
+
+  -- Get invoices with line items
+  SELECT COALESCE(json_agg(
+    json_build_object(
+      'id', i.id,
+      'company_id', i.company_id,
+      'deal_id', i.deal_id,
+      'quote_id', i.quote_id,
+      'invoice_number', i.invoice_number,
+      'title', i.title,
+      'status', i.status,
+      'issue_date', i.issue_date,
+      'due_date', i.due_date,
+      'total_amount', i.total_amount,
+      'balance_due', i.balance_due,
+      'notes', i.notes,
+      'public_share_id', i.public_share_id,
+      'created_at', i.created_at,
+      'updated_at', i.updated_at,
+      'line_items', COALESCE(
+        (SELECT json_agg(
+          json_build_object(
+            'id', li.id,
+            'invoice_id', li.invoice_id,
+            'name', li.name,
+            'description', li.description,
+            'quantity', li.quantity,
+            'unit_price', li.unit_price,
+            'position', li.position,
+            'change_order_id', li.change_order_id
+          ) ORDER BY li.position
+        ) FROM invoice_line_items li WHERE li.invoice_id = i.id),
+        '[]'::json
+      )
+    ) ORDER BY i.created_at DESC
+  ), '[]'::json) INTO v_invoices
+  FROM invoices i
+  WHERE i.deal_id = p_deal_id;
+
+  -- Get deal notes with author display names
+  SELECT COALESCE(json_agg(
+    json_build_object(
+      'id', dn.id,
+      'company_id', dn.company_id,
+      'deal_id', dn.deal_id,
+      'author_user_id', dn.author_user_id,
+      'author', COALESCE(
+        NULLIF(TRIM(cm.display_name), ''),
+        cm.email,
+        'Team Member'
+      ),
+      'body', dn.body,
+      'created_at', dn.created_at,
+      'updated_at', dn.updated_at
+    ) ORDER BY dn.created_at DESC
+  ), '[]'::json) INTO v_deal_notes
+  FROM deal_notes dn
+  LEFT JOIN company_members cm ON cm.user_id = dn.author_user_id AND cm.company_id = v_company_id
+  WHERE dn.deal_id = p_deal_id;
+
+  -- Get appointments with assignee display names
+  SELECT COALESCE(json_agg(
+    json_build_object(
+      'id', a.id,
+      'company_id', a.company_id,
+      'deal_id', a.deal_id,
+      'assigned_to', a.assigned_to,
+      'assignee_name', COALESCE(
+        NULLIF(TRIM(cm.display_name), ''),
+        cm.email
+      ),
+      'crew_id', a.crew_id,
+      'event_color', a.event_color,
+      'scheduled_start', a.scheduled_start,
+      'scheduled_end', a.scheduled_end,
+      'appointment_notes', a.appointment_notes,
+      'send_email', a.send_email,
+      'send_sms', a.send_sms,
+      'created_at', a.created_at,
+      'updated_at', a.updated_at
+    ) ORDER BY a.scheduled_start DESC
+  ), '[]'::json) INTO v_appointments
+  FROM appointments a
+  LEFT JOIN company_members cm ON cm.user_id = a.assigned_to AND cm.company_id = v_company_id
+  WHERE a.deal_id = p_deal_id;
+
+  -- Get proposal attachments with uploader names
+  SELECT COALESCE(json_agg(
+    json_build_object(
+      'id', pa.id,
+      'deal_id', pa.deal_id,
+      'quote_id', pa.quote_id,
+      'file_name', pa.original_filename,
+      'original_filename', pa.original_filename,
+      'storage_key', pa.storage_key,
+      'content_type', pa.content_type,
+      'byte_size', pa.byte_size,
+      'uploaded_at', pa.uploaded_at,
+      'uploaded_by_user_id', pa.uploaded_by_user_id,
+      'uploader_name', COALESCE(
+        NULLIF(TRIM(cm.display_name), ''),
+        cm.email,
+        'Team Member'
+      )
+    ) ORDER BY pa.uploaded_at DESC
+  ), '[]'::json) INTO v_proposal_attachments
+  FROM proposal_attachments pa
+  LEFT JOIN company_members cm ON cm.user_id = pa.uploaded_by_user_id AND cm.company_id = v_company_id
+  WHERE pa.deal_id = p_deal_id;
+
+  -- Return combined result
+  RETURN json_build_object(
+    'deal', v_deal,
+    'quotes', v_quotes,
+    'invoices', v_invoices,
+    'dealNotes', v_deal_notes,
+    'appointments', v_appointments,
+    'proposalAttachments', v_proposal_attachments
+  );
+END;
+$$;
