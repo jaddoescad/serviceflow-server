@@ -3,12 +3,16 @@ import { createClient } from "npm:@supabase/supabase-js";
 type DripChannel = "email" | "sms" | "both";
 type DripStatus = "pending" | "processing" | "sent" | "failed" | "cancelled";
 
+type JobType = "drip" | "appointment_reminder";
+
 type DripJobRow = {
   id: string;
   company_id: string;
   deal_id: string;
+  appointment_id: string | null;
   sequence_id: string | null;
   stage_id: string;
+  job_type: JobType;
   channel: DripChannel;
   send_at: string;
   status: DripStatus;
@@ -73,7 +77,17 @@ type SequenceRow = {
   is_enabled: boolean;
 };
 
+type CommunicationTemplateRow = {
+  id: string;
+  company_id: string;
+  template_key: string;
+  email_subject: string | null;
+  email_body: string | null;
+  sms_body: string | null;
+};
+
 const DRIP_JOB_TABLE = "deal_drip_jobs";
+const COMMUNICATION_TEMPLATES_TABLE = "communication_templates";
 const DEAL_TABLE = "deals";
 const CONTACT_TABLE = "contacts";
 const COMPANY_TABLE = "companies";
@@ -115,7 +129,18 @@ const parseLimit = (input: unknown) => {
   return Math.min(Math.max(Math.floor(input), 1), 200);
 };
 
-const normalizePhone = (value: string | null | undefined) => (value ?? "").trim();
+const normalizePhone = (value: string | null | undefined) => {
+  const trimmed = (value ?? "").trim().replace(/[^0-9+]/g, "");
+  if (!trimmed) return "";
+  // If already has +, return as-is
+  if (trimmed.startsWith("+")) return trimmed;
+  // If starts with 1 and is 11 digits, add +
+  if (trimmed.startsWith("1") && trimmed.length === 11) return `+${trimmed}`;
+  // If 10 digits (North American), add +1
+  if (trimmed.length === 10) return `+1${trimmed}`;
+  // Otherwise return with + prefix
+  return `+${trimmed}`;
+};
 
 const normalizeOpenPhoneKey = (value: string | null | undefined) => (value ?? "").trim().replace(/^Bearer\s+/i, "");
 
@@ -291,30 +316,57 @@ Deno.serve(async (request) => {
 
   const adminClient = createClient(supabaseUrl, serviceRoleKey);
 
-  const { data: jobs, error: jobsError } = await adminClient
+  // Fetch regular drip jobs (require sequence to be enabled)
+  const { data: dripJobs, error: dripJobsError } = await adminClient
     .from(DRIP_JOB_TABLE)
     .select(`
-      id, company_id, deal_id, sequence_id, stage_id, channel, send_at, status, message_subject, message_body, sms_body,
+      id, company_id, deal_id, appointment_id, sequence_id, stage_id, job_type, channel, send_at, status, message_subject, message_body, sms_body,
       deal:deals!inner(id, disable_drips, archived_at),
       sequence:drip_sequences!inner(id, is_enabled)
     `)
     .lte("send_at", nowIso)
     .eq("status", "pending")
+    .eq("job_type", "drip")
     .eq("deal.disable_drips", false)
     .is("deal.archived_at", null)
     .eq("sequence.is_enabled", true)
     .order("send_at", { ascending: true })
     .limit(limit);
 
-  if (jobsError) {
-    console.error("Failed to load pending drip jobs", jobsError);
+  if (dripJobsError) {
+    console.error("Failed to load pending drip jobs", dripJobsError);
     return Response.json(
       { error: "Unable to load drip jobs." },
       { status: 500, headers: corsHeaders }
     );
   }
 
-  if (!jobs || jobs.length === 0) {
+  // Fetch appointment reminder jobs (no sequence required)
+  const { data: reminderJobs, error: reminderJobsError } = await adminClient
+    .from(DRIP_JOB_TABLE)
+    .select(`
+      id, company_id, deal_id, appointment_id, sequence_id, stage_id, job_type, channel, send_at, status, message_subject, message_body, sms_body,
+      deal:deals!inner(id, disable_drips, archived_at)
+    `)
+    .lte("send_at", nowIso)
+    .eq("status", "pending")
+    .eq("job_type", "appointment_reminder")
+    .is("deal.archived_at", null)
+    .order("send_at", { ascending: true })
+    .limit(limit);
+
+  if (reminderJobsError) {
+    console.error("Failed to load pending reminder jobs", reminderJobsError);
+    return Response.json(
+      { error: "Unable to load reminder jobs." },
+      { status: 500, headers: corsHeaders }
+    );
+  }
+
+  // Combine both job types
+  const jobs = [...(dripJobs ?? []), ...(reminderJobs ?? [])];
+
+  if (jobs.length === 0) {
     return Response.json(
       { processed: 0, sent: 0, failed: 0, cancelled: 0, skipped: 0 },
       { status: 200, headers: corsHeaders }
@@ -324,6 +376,7 @@ Deno.serve(async (request) => {
   const dealIds = Array.from(new Set(jobs.map((job) => job.deal_id)));
   const companyIds = Array.from(new Set(jobs.map((job) => job.company_id)));
   const sequenceIds = Array.from(new Set(jobs.map((job) => job.sequence_id).filter(Boolean))) as string[];
+  const appointmentIds = Array.from(new Set(jobs.map((job) => job.appointment_id).filter(Boolean))) as string[];
 
   const dealMap = new Map<string, DealRow>();
   const contactMap = new Map<string, ContactRow>();
@@ -331,6 +384,8 @@ Deno.serve(async (request) => {
   const sequenceMap = new Map<string, SequenceRow>();
   const appointmentMap = new Map<string, AppointmentRow>();
   const addressMap = new Map<string, AddressRow>();
+  const reminderTemplateMap = new Map<string, CommunicationTemplateRow>(); // company_id -> template
+  const specificAppointmentMap = new Map<string, AppointmentRow>(); // appointment_id -> appointment (for reminders)
 
   if (dealIds.length > 0) {
     const { data: deals, error } = await adminClient
@@ -448,6 +503,49 @@ Deno.serve(async (request) => {
     }
   }
 
+  // Fetch appointment reminder templates for companies that have reminder jobs
+  const reminderCompanyIds = Array.from(
+    new Set(
+      jobs
+        .filter((job) => job.job_type === "appointment_reminder")
+        .map((job) => job.company_id)
+    )
+  );
+
+  if (reminderCompanyIds.length > 0) {
+    const { data: templates, error: templatesError } = await adminClient
+      .from(COMMUNICATION_TEMPLATES_TABLE)
+      .select("id, company_id, template_key, email_subject, email_body, sms_body")
+      .in("company_id", reminderCompanyIds)
+      .eq("template_key", "appointment_reminder");
+
+    if (templatesError) {
+      console.error("Failed to load reminder templates", templatesError);
+      // Non-fatal: continue without templates
+    } else {
+      for (const template of templates ?? []) {
+        reminderTemplateMap.set(template.company_id, template as CommunicationTemplateRow);
+      }
+    }
+  }
+
+  // Fetch specific appointments for reminder jobs
+  if (appointmentIds.length > 0) {
+    const { data: specificAppointments, error: specificAppointmentsError } = await adminClient
+      .from(APPOINTMENT_TABLE)
+      .select("id, deal_id, scheduled_start, scheduled_end")
+      .in("id", appointmentIds);
+
+    if (specificAppointmentsError) {
+      console.error("Failed to load specific appointments for reminders", specificAppointmentsError);
+      // Non-fatal: continue without specific appointment data
+    } else {
+      for (const apt of specificAppointments ?? []) {
+        specificAppointmentMap.set(apt.id, apt as AppointmentRow);
+      }
+    }
+  }
+
   const results = {
     processed: 0,
     sent: 0,
@@ -457,7 +555,7 @@ Deno.serve(async (request) => {
   };
 
   const postmarkToken = getEnv("POSTMARK_SERVER_TOKEN", { required: false });
-  const postmarkFromEmail = getEnv("POSTMARK_FROM_EMAIL", { required: false });
+  const postmarkFromEmail = getEnv("POSTMARK_FROM_EMAIL", { required: false }) || getEnv("DRIP_EMAIL_SENDER", { required: false });
   const postmarkMessageStream = getEnv("POSTMARK_MESSAGE_STREAM", { required: false }) || "outbound";
 
   for (const job of jobs as DripJobRow[]) {
@@ -465,9 +563,10 @@ Deno.serve(async (request) => {
     const contact = deal?.contact_id ? contactMap.get(deal.contact_id) ?? null : null;
     const company = companyMap.get(job.company_id) ?? null;
     const sequence = job.sequence_id ? sequenceMap.get(job.sequence_id) ?? null : null;
+    const isAppointmentReminder = job.job_type === "appointment_reminder";
 
     if (!deal) {
-      await cancelJob(adminClient, job.id, "Deal missing for drip job.");
+      await cancelJob(adminClient, job.id, "Deal missing for job.");
       results.cancelled += 1;
       results.processed += 1;
       continue;
@@ -480,26 +579,29 @@ Deno.serve(async (request) => {
       continue;
     }
 
-    if (deal.stage !== job.stage_id) {
+    // Stage check only applies to regular drip jobs, not appointment reminders
+    if (!isAppointmentReminder && deal.stage !== job.stage_id) {
       await cancelJob(adminClient, job.id, "Deal moved to a different stage.");
       results.cancelled += 1;
       results.processed += 1;
       continue;
     }
 
-    if (deal.disable_drips) {
+    // Disable drips only applies to regular drip jobs
+    if (!isAppointmentReminder && deal.disable_drips) {
       results.skipped += 1;
       continue;
     }
 
-    if (!sequence) {
+    // Sequence check only applies to regular drip jobs
+    if (!isAppointmentReminder && !sequence) {
       await cancelJob(adminClient, job.id, "Drip sequence not found.");
       results.cancelled += 1;
       results.processed += 1;
       continue;
     }
 
-    if (!sequence.is_enabled) {
+    if (!isAppointmentReminder && !sequence?.is_enabled) {
       results.skipped += 1;
       continue;
     }
@@ -513,8 +615,32 @@ Deno.serve(async (request) => {
     const salesPerson = (deal.salesperson || "").trim();
 
     // Get appointment and address data for this deal
-    const appointment = appointmentMap.get(deal.id) ?? null;
+    // For appointment reminders, use the specific appointment; otherwise use latest appointment for deal
+    const appointment = isAppointmentReminder && job.appointment_id
+      ? specificAppointmentMap.get(job.appointment_id) ?? appointmentMap.get(deal.id) ?? null
+      : appointmentMap.get(deal.id) ?? null;
     const address = deal.contact_address_id ? addressMap.get(deal.contact_address_id) ?? null : null;
+
+    // For appointment reminders, skip if the appointment has already started or passed
+    if (isAppointmentReminder) {
+      if (!appointment) {
+        await cancelJob(adminClient, job.id, "Appointment not found for reminder.");
+        results.cancelled += 1;
+        results.processed += 1;
+        continue;
+      }
+
+      const appointmentStart = new Date(appointment.scheduled_start);
+      if (appointmentStart <= new Date()) {
+        await cancelJob(adminClient, job.id, "Appointment has already started or passed.");
+        results.cancelled += 1;
+        results.processed += 1;
+        continue;
+      }
+    }
+
+    // For appointment reminders, get template from communication_templates
+    const reminderTemplate = isAppointmentReminder ? reminderTemplateMap.get(job.company_id) ?? null : null;
 
     // Format appointment date and time
     const formatAppointmentDate = (isoDate: string | null): string => {
@@ -573,19 +699,29 @@ Deno.serve(async (request) => {
         .filter(Boolean)
         .join(" ")
         .trim(),
+      deal_address: formatAddress(address),
       // Appointment variables
       appointment_date: formatAppointmentDate(appointment?.scheduled_start ?? null),
       appointment_time: formatAppointmentTime(appointment?.scheduled_start ?? null),
       appointment_location: formatAddress(address),
-      // Job/project date (same as appointment for scheduled projects)
-      job_date: formatAppointmentDate(appointment?.scheduled_start ?? null),
       // Review URL (templates use {review-button} which normalizes to review_button)
       review_button: (company?.review_url || "").trim(),
     };
 
-    const resolvedSubject = job.message_subject ? applyTemplate(job.message_subject, templateContext) : null;
-    const resolvedEmailBody = job.message_body ? applyTemplate(job.message_body, templateContext) : null;
-    const resolvedSmsBody = job.sms_body ? applyTemplate(job.sms_body, templateContext) : null;
+    // For appointment reminders, prefer template content; for regular drips, use job content
+    const emailSubjectSource = isAppointmentReminder
+      ? (job.message_subject || reminderTemplate?.email_subject || null)
+      : job.message_subject;
+    const emailBodySource = isAppointmentReminder
+      ? (job.message_body || reminderTemplate?.email_body || null)
+      : job.message_body;
+    const smsBodySource = isAppointmentReminder
+      ? (job.sms_body || reminderTemplate?.sms_body || null)
+      : job.sms_body;
+
+    const resolvedSubject = emailSubjectSource ? applyTemplate(emailSubjectSource, templateContext) : null;
+    const resolvedEmailBody = emailBodySource ? applyTemplate(emailBodySource, templateContext) : null;
+    const resolvedSmsBody = smsBodySource ? applyTemplate(smsBodySource, templateContext) : null;
 
     const canSendEmail = shouldSendEmail && resolvedSubject && resolvedEmailBody && toEmail && postmarkToken && postmarkFromEmail;
     const canSendSms = shouldSendSms && resolvedSmsBody && toPhone && company?.openphone_enabled && company?.openphone_api_key;

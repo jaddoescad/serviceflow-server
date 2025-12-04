@@ -10,9 +10,16 @@ type ResourceType = 'deal' | 'contact' | 'quote' | 'invoice' | 'crew' | 'appoint
   'proposal_attachment' | 'change_order' | 'work_order' | 'company_deal_source';
 
 /**
+ * Resource config for authorization lookups
+ */
+type ResourceConfig =
+  | { table: string; companyIdColumn: string; joinThrough?: never }
+  | { table: string; joinThrough: { foreignKey: string; parentTable: string; parentCompanyIdColumn: string }; companyIdColumn?: never };
+
+/**
  * Map resource types to their table names and company_id column
  */
-const RESOURCE_TABLE_MAP: Record<ResourceType, { table: string; companyIdColumn: string }> = {
+const RESOURCE_TABLE_MAP: Record<ResourceType, ResourceConfig> = {
   deal: { table: 'deals', companyIdColumn: 'company_id' },
   contact: { table: 'contacts', companyIdColumn: 'company_id' },
   quote: { table: 'quotes', companyIdColumn: 'company_id' },
@@ -21,7 +28,14 @@ const RESOURCE_TABLE_MAP: Record<ResourceType, { table: string; companyIdColumn:
   appointment: { table: 'appointments', companyIdColumn: 'company_id' },
   deal_note: { table: 'deal_notes', companyIdColumn: 'company_id' },
   drip_sequence: { table: 'drip_sequences', companyIdColumn: 'company_id' },
-  drip_step: { table: 'drip_steps', companyIdColumn: 'company_id' },
+  drip_step: {
+    table: 'drip_steps',
+    joinThrough: {
+      foreignKey: 'sequence_id',
+      parentTable: 'drip_sequences',
+      parentCompanyIdColumn: 'company_id'
+    }
+  },
   product_template: { table: 'product_templates', companyIdColumn: 'company_id' },
   communication_template: { table: 'communication_templates', companyIdColumn: 'company_id' },
   proposal_attachment: { table: 'proposal_attachments', companyIdColumn: 'company_id' },
@@ -56,18 +70,55 @@ export async function getResourceCompanyId(
     return null;
   }
 
-  const { data, error } = await supabase
-    .from(config.table)
-    .select('company_id')
-    .eq('id', resourceId)
-    .single();
+  let companyId: string | null = null;
 
-  if (error || !data) {
-    resourceCompanyCache.set(cacheKey, { companyId: null, timestamp: Date.now() });
-    return null;
+  // Handle resources that need to join through a parent table
+  if (config.joinThrough) {
+    const { foreignKey, parentTable, parentCompanyIdColumn } = config.joinThrough;
+
+    // First, get the foreign key value from the child table
+    const { data: childData, error: childError } = await supabase
+      .from(config.table)
+      .select(foreignKey)
+      .eq('id', resourceId)
+      .single();
+
+    if (childError || !childData) {
+      resourceCompanyCache.set(cacheKey, { companyId: null, timestamp: Date.now() });
+      return null;
+    }
+
+    const parentId = (childData as unknown as Record<string, string>)[foreignKey];
+
+    // Then, get the company_id from the parent table
+    const { data: parentData, error: parentError } = await supabase
+      .from(parentTable)
+      .select(parentCompanyIdColumn)
+      .eq('id', parentId)
+      .single();
+
+    if (parentError || !parentData) {
+      resourceCompanyCache.set(cacheKey, { companyId: null, timestamp: Date.now() });
+      return null;
+    }
+
+    companyId = (parentData as unknown as Record<string, string>)[parentCompanyIdColumn];
+  } else {
+    // Direct company_id lookup
+    const { data, error } = await supabase
+      .from(config.table)
+      .select(config.companyIdColumn)
+      .eq('id', resourceId)
+      .single();
+
+    if (error || !data) {
+      resourceCompanyCache.set(cacheKey, { companyId: null, timestamp: Date.now() });
+      return null;
+    }
+
+    companyId = (data as unknown as Record<string, string>)[config.companyIdColumn];
   }
 
-  const companyId = (data as { company_id: string }).company_id;
   resourceCompanyCache.set(cacheKey, { companyId, timestamp: Date.now() });
 
   return companyId;

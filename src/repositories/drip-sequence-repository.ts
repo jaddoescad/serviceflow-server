@@ -264,3 +264,113 @@ export async function cancelPendingDripJobsForDeal(
 
   return data?.length ?? 0;
 }
+
+/**
+ * Appointment reminder types
+ */
+export type ReminderChannel = 'both' | 'email' | 'sms' | 'none';
+
+export type AppointmentReminderJob = {
+  id: string;
+  company_id: string;
+  deal_id: string;
+  appointment_id: string;
+  job_type: 'appointment_reminder';
+  channel: string;
+  send_at: string;
+  status: 'pending' | 'processing' | 'sent' | 'failed' | 'cancelled';
+  message_subject: string | null;
+  message_body: string | null;
+  sms_body: string | null;
+  last_error: string | null;
+  sent_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+/**
+ * Create an appointment reminder job
+ */
+export async function createAppointmentReminder(params: {
+  companyId: string;
+  dealId: string;
+  appointmentId: string;
+  channel: ReminderChannel;
+  sendAt: Date;
+  messageSubject?: string | null;
+  messageBody?: string | null;
+  smsBody?: string | null;
+}): Promise<{ id: string }> {
+  const { companyId, dealId, appointmentId, channel, sendAt, messageSubject, messageBody, smsBody } = params;
+
+  const { data, error } = await supabase
+    .from('deal_drip_jobs')
+    .insert([
+      {
+        company_id: companyId,
+        deal_id: dealId,
+        appointment_id: appointmentId,
+        job_type: 'appointment_reminder',
+        channel,
+        stage_id: 'reminder', // Required field, using a placeholder
+        send_at: sendAt.toISOString(),
+        status: 'pending',
+        message_subject: messageSubject ?? null,
+        message_body: messageBody ?? null,
+        sms_body: smsBody ?? null,
+      },
+    ])
+    .select('id')
+    .single();
+
+  if (error) {
+    throw new DatabaseError('Failed to create appointment reminder', error);
+  }
+
+  return data;
+}
+
+/**
+ * Cancel pending appointment reminders for an appointment
+ */
+export async function cancelAppointmentReminders(
+  appointmentId: string,
+  reason: string = 'Appointment cancelled or rescheduled'
+): Promise<number> {
+  const { data, error } = await supabase
+    .from('deal_drip_jobs')
+    .update({
+      status: 'cancelled',
+      last_error: reason,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('appointment_id', appointmentId)
+    .eq('job_type', 'appointment_reminder')
+    .eq('status', 'pending')
+    .select('id');
+
+  if (error) {
+    throw new DatabaseError('Failed to cancel appointment reminders', error);
+  }
+
+  return data?.length ?? 0;
+}
+
+/**
+ * Check if an appointment has a pending reminder
+ */
+export async function hasPendingReminder(appointmentId: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('deal_drip_jobs')
+    .select('id')
+    .eq('appointment_id', appointmentId)
+    .eq('job_type', 'appointment_reminder')
+    .eq('status', 'pending')
+    .limit(1);
+
+  if (error) {
+    throw new DatabaseError('Failed to check for pending reminder', error);
+  }
+
+  return (data?.length ?? 0) > 0;
+}

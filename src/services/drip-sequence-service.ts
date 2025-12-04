@@ -132,26 +132,6 @@ export const DEFAULT_DRIP_SEQUENCES: DefaultDripSequence[] = [
   },
   {
     pipeline_id: 'sales',
-    stage_id: 'estimate_scheduled',
-    name: 'Appointment Information',
-    is_enabled: true,
-    steps: [
-      {
-        position: 1,
-        delay_type: 'immediate',
-        delay_value: 0,
-        delay_unit: 'minutes',
-        channel: 'both',
-        email_subject: 'Your Appointment Confirmation with {company-name}',
-        email_body:
-          'Hi! Your appointment with {company-name} has been scheduled for {appointment-date} at {appointment-time} at {appointment-location}. Please let us know if you have any questions or need to make changes! Thanks - {salesperson-name}',
-        sms_body:
-          'Hi! Your appointment with {company-name} has been scheduled: {appointment-date} {appointment-time} {appointment-location} please let us know if you have any questions or need to make changes! Thanks - {salesperson-name}',
-      },
-    ],
-  },
-  {
-    pipeline_id: 'sales',
     stage_id: 'in_draft',
     name: 'Proposal Draft',
     is_enabled: true,

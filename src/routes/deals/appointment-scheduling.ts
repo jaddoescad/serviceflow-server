@@ -6,6 +6,7 @@ import { sanitizeUserId } from '../../utils/validation';
 import * as DealRepository from '../../repositories/deal-repository';
 import * as AppointmentRepository from '../../repositories/appointment-repository';
 import * as GoogleCalendarTokenRepository from '../../repositories/google-calendar-token-repository';
+import * as DripRepository from '../../repositories/drip-sequence-repository';
 import { deliverAppointmentCommunications } from '../../services/appointment-service';
 import { requireResourceAccess } from '../../middleware/authorization';
 
@@ -17,7 +18,7 @@ router.post(
   requireResourceAccess({ resourceType: 'deal', resourceIdParam: 'dealId' }),
   asyncHandler(async (req, res) => {
     const { dealId } = req.params;
-    const { stage, appointment, deal, communications } = req.body ?? {};
+    const { stage, appointment, deal, communications, sendReminder, reminderChannel } = req.body ?? {};
 
     if (!stage || typeof stage !== 'string') {
       throw new ValidationError('stage is required');
@@ -103,6 +104,29 @@ router.post(
       sendSms: Boolean(appointmentPayload.send_sms),
     });
 
+    // Schedule reminder if requested
+    if (sendReminder && reminderChannel && reminderChannel !== 'none') {
+      try {
+        const appointmentStart = new Date(appointment.scheduled_start);
+        const reminderTime = new Date(appointmentStart.getTime() - 24 * 60 * 60 * 1000); // 24 hours before
+
+        // Only schedule if reminder time is in the future
+        if (reminderTime > new Date()) {
+          await DripRepository.createAppointmentReminder({
+            companyId: updatedDeal.company_id ?? appointmentPayload.company_id,
+            dealId,
+            appointmentId: createdAppointment.id,
+            channel: reminderChannel,
+            sendAt: reminderTime,
+            // Template content will be populated by the job processor using communication_templates
+          });
+        }
+      } catch (reminderError) {
+        console.error('Failed to schedule appointment reminder', reminderError);
+        // Don't fail the request if reminder scheduling fails
+      }
+    }
+
     res.json({
       ...updatedDeal,
       latest_appointment: createdAppointment,
@@ -117,7 +141,7 @@ router.patch(
   requireResourceAccess({ resourceType: 'deal', resourceIdParam: 'dealId' }),
   asyncHandler(async (req, res) => {
     const { dealId, appointmentId } = req.params;
-    const { appointment, deal, communications } = req.body ?? {};
+    const { appointment, deal, communications, sendReminder, reminderChannel } = req.body ?? {};
 
     if (!appointment || typeof appointment !== 'object') {
       throw new ValidationError('appointment payload is required');
@@ -178,11 +202,48 @@ router.patch(
       sendSms: Boolean(appointment.send_sms),
     });
 
+    // Cancel existing reminders and reschedule if needed
+    try {
+      await DripRepository.cancelAppointmentReminders(appointmentId, 'Appointment updated');
+
+      if (sendReminder && reminderChannel && reminderChannel !== 'none') {
+        const appointmentStart = new Date(appointment.scheduled_start);
+        const reminderTime = new Date(appointmentStart.getTime() - 24 * 60 * 60 * 1000); // 24 hours before
+
+        // Only schedule if reminder time is in the future
+        if (reminderTime > new Date()) {
+          await DripRepository.createAppointmentReminder({
+            companyId: updatedDeal.company_id ?? appointment.company_id ?? existingDeal.company_id,
+            dealId,
+            appointmentId,
+            channel: reminderChannel,
+            sendAt: reminderTime,
+          });
+        }
+      }
+    } catch (reminderError) {
+      console.error('Failed to update appointment reminders', reminderError);
+      // Don't fail the request if reminder scheduling fails
+    }
+
     res.json({
       ...updatedDeal,
       latest_appointment: updatedAppointment,
       communication_results: communicationResults,
     });
+  })
+);
+
+// GET /:dealId/appointments/:appointmentId/reminder - Check if appointment has a pending reminder
+router.get(
+  '/:dealId/appointments/:appointmentId/reminder',
+  requireResourceAccess({ resourceType: 'deal', resourceIdParam: 'dealId' }),
+  asyncHandler(async (req, res) => {
+    const { appointmentId } = req.params;
+
+    const hasReminder = await DripRepository.hasPendingReminder(appointmentId);
+
+    res.json({ hasReminder });
   })
 );
 
