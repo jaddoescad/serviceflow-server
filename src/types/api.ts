@@ -597,6 +597,16 @@ export interface PaymentRequestSendContext {
 }
 
 /**
+ * Lightweight drip sequence metadata for deal detail page
+ * Only includes data needed for UI indicators (not full step content)
+ */
+export interface DripSequenceMeta {
+  stage_id: string;
+  is_enabled: boolean;
+  step_count: number;
+}
+
+/**
  * Deal detail from get_deal_detail RPC
  */
 export interface DealDetail {
@@ -607,6 +617,7 @@ export interface DealDetail {
   notes: DealNote[];
   changeOrders: ChangeOrderWithItems[];
   proposalAttachments: ProposalAttachment[];
+  dripSequencesMeta: DripSequenceMeta[];
 }
 
 /**
