@@ -119,39 +119,19 @@ BEGIN
     v_position := v_position + 1;
   END LOOP;
 
-  -- 4. Return the saved quote with line items
+  -- 4. Return the quote with line items (preserving original structure)
   RETURN (
     SELECT json_build_object(
-      'id', q.id,
-      'company_id', q.company_id,
-      'deal_id', q.deal_id,
-      'quote_number', q.quote_number,
-      'title', q.title,
-      'client_message', q.client_message,
-      'disclaimer', q.disclaimer,
-      'status', q.status,
-      'public_share_id', q.public_share_id,
-      'acceptance_signature', q.acceptance_signature,
-      'acceptance_signed_at', q.acceptance_signed_at,
-      'created_at', q.created_at,
-      'updated_at', q.updated_at,
+      'quote', row_to_json(q),
       'line_items', COALESCE(
-        (SELECT json_agg(
-          json_build_object(
-            'id', li.id,
-            'quote_id', li.quote_id,
-            'name', li.name,
-            'description', li.description,
-            'quantity', li.quantity,
-            'unit_price', li.unit_price,
-            'position', li.position
-          ) ORDER BY li.position
-        ) FROM quote_line_items li
-        WHERE li.quote_id = q.id
-        AND (li.is_change_order IS NULL OR li.is_change_order = false)
-        AND li.change_order_id IS NULL),
-        '[]'::json
-      )
+        (SELECT json_agg(row_to_json(li) ORDER BY li.position)
+         FROM quote_line_items li
+         WHERE li.quote_id = v_quote_id
+         AND (li.is_change_order IS NULL OR li.is_change_order = false)
+         AND li.change_order_id IS NULL),
+        '[]'::JSON
+      ),
+      'is_new', v_is_new
     )
     FROM quotes q
     WHERE q.id = v_quote_id
