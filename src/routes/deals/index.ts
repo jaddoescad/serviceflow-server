@@ -148,9 +148,11 @@ router.get(
   requireResourceAccess({ resourceType: 'deal' }),
   asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const { quoteId } = req.query;
+    const rawQuoteId = req.query.quoteId;
+    // Sanitize quoteId - handle string "undefined" or "null" that can occur from URL serialization
+    const quoteId = sanitizeUserId(rawQuoteId);
 
-    const data = await RpcRepository.getDealProposalData(id, quoteId as string | undefined);
+    const data = await RpcRepository.getDealProposalData(id, quoteId);
 
     // Sign proposal attachment URLs
     const signedAttachments = await toProposalAttachmentAssets(data.attachments ?? []);
