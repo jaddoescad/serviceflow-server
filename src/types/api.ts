@@ -650,12 +650,15 @@ export interface CreateCompanyWithMemberResult {
 }
 
 /**
- * Create or update quote result from create_or_update_quote_with_items RPC
+ * Minimal response from create_or_update_quote_with_items RPC
  */
 export interface CreateOrUpdateQuoteResult {
-  quote: Quote;
-  line_items: QuoteLineItem[];
+  success: boolean;
+  id: string;
+  quote_number: string;
+  public_share_id: string | null;
   is_new: boolean;
+  new_line_items: Array<{ id: string; client_id: string }>;
 }
 
 /**

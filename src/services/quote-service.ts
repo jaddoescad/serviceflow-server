@@ -31,12 +31,24 @@ export interface QuotePayload {
   quoteNumber?: string;
   title?: string | null;
   status?: string;
+  client_message?: string | null;
+  disclaimer?: string | null;
 }
 
 export type CreateOrUpdateQuoteParams = {
   quote: QuotePayload;
   lineItems: QuoteLineItemInput[];
   deletedLineItemIds?: string[];
+};
+
+/** Minimal response from quote save operation */
+export type QuoteSaveResult = {
+  success: boolean;
+  id: string;
+  quote_number: string;
+  public_share_id: string | null;
+  is_new: boolean;
+  new_line_items: Array<{ id: string; client_id: string }>;
 };
 
 /**
@@ -47,7 +59,7 @@ export type CreateOrUpdateQuoteParams = {
  * - Updating deal stage to 'in_draft' when creating new quote
  * All operations are rolled back if any step fails.
  */
-export async function createOrUpdateQuote(params: CreateOrUpdateQuoteParams): Promise<QuoteWithLineItems> {
+export async function createOrUpdateQuote(params: CreateOrUpdateQuoteParams): Promise<QuoteSaveResult> {
   const { quote: quotePayload, lineItems, deletedLineItemIds = [] } = params;
 
   if (!quotePayload?.company_id || !quotePayload?.deal_id) {
@@ -67,15 +79,14 @@ export async function createOrUpdateQuote(params: CreateOrUpdateQuoteParams): Pr
     quoteNumber: resolvedQuoteNumber,
     title: quotePayload.title ?? resolvedQuoteNumber,
     status: quotePayload.status ?? 'draft',
+    clientMessage: quotePayload.client_message,
+    disclaimer: quotePayload.disclaimer,
     lineItems: lineItems || [],
     deletedLineItemIds,
   });
 
-  // Return the quote with line items in the expected format
-  return {
-    ...result.quote,
-    line_items: result.line_items,
-  };
+  // Return minimal response directly from RPC
+  return result;
 }
 
 /**

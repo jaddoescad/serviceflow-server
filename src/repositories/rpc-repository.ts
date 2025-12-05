@@ -326,6 +326,8 @@ export async function createOrUpdateQuoteWithItems(params: {
   quoteNumber?: string | null;
   title?: string | null;
   status?: string;
+  clientMessage?: string | null;
+  disclaimer?: string | null;
   lineItems: Array<{
     id?: string;
     name: string;
@@ -344,6 +346,8 @@ export async function createOrUpdateQuoteWithItems(params: {
     p_quote_number: params.quoteNumber || null,
     p_title: params.title || null,
     p_status: params.status || 'draft',
+    p_client_message: params.clientMessage ?? null,
+    p_disclaimer: params.disclaimer ?? null,
     p_line_items: params.lineItems || [],
     p_deleted_line_item_ids: params.deletedLineItemIds || [],
   });

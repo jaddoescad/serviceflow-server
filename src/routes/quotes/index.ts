@@ -120,13 +120,13 @@ router.post(
       ? quoteData.deletedLineItemIds
       : [];
 
-    const fullQuote = await QuoteService.createOrUpdateQuote({
+    const result = await QuoteService.createOrUpdateQuote({
       quote: quotePayload,
       lineItems: itemsPayload,
       deletedLineItemIds,
     });
 
-    res.json(sanitizeQuoteLineItems(fullQuote));
+    res.json(result);
   })
 );
 
