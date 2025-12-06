@@ -1,4 +1,4 @@
-import { sendProposalEmail, isPostmarkConfigured } from '../lib/postmark';
+import { sendProposalEmail, isPostmarkConfigured, stripButtonMarkers } from '../lib/postmark';
 import { sendOpenPhoneMessage } from '../lib/openphone';
 import { formatSmsRecipient } from '../utils/formatting';
 import { getEmailContextForCompany } from './notification-service';
@@ -199,13 +199,13 @@ export async function sendSms(params: {
     throw new CommunicationError('OpenPhone is not configured for this company.');
   }
 
-  // Send SMS
+  // Send SMS (strip button markers so URLs appear as plain text)
   try {
     await sendOpenPhoneMessage({
       apiKey: communicationConfig.smsConfig.apiKey,
       from: communicationConfig.smsConfig.from,
       to: formattedRecipient,
-      content: messageBody,
+      content: stripButtonMarkers(messageBody),
     });
   } catch (error) {
     const status = typeof (error as any)?.status === 'number' ? (error as any).status : 400;
