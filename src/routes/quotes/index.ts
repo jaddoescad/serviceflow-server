@@ -24,10 +24,11 @@ router.get(
   '/',
   requireCompanyAccess(),
   asyncHandler(async (req, res) => {
-    const { company_id, deal_id } = req.query;
+    const { company_id, deal_id, exclude_archived } = req.query;
     const quotes = await QuoteRepository.getQuotes({
       company_id: company_id as string,
       deal_id: deal_id as string,
+      exclude_archived_deals: exclude_archived === 'true',
     });
     const sanitized = quotes.map(sanitizeQuoteLineItems);
     res.json(sanitized);

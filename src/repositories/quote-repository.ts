@@ -36,7 +36,24 @@ export type QuoteWithLineItems = ApiQuoteWithLineItems;
 export async function getQuotes(filters?: {
   company_id?: string;
   deal_id?: string;
+  exclude_archived_deals?: boolean;
 }): Promise<QuoteWithLineItems[]> {
+  // If we need to exclude archived deals, join with deals table
+  if (filters?.exclude_archived_deals && filters?.company_id) {
+    const { data, error } = await supabase
+      .from('quotes')
+      .select('*, line_items:quote_line_items(*), deal:deals!inner(id, archived_at)')
+      .eq('company_id', filters.company_id)
+      .is('deal.archived_at', null);
+
+    if (error) {
+      throw new DatabaseError('Failed to fetch quotes', error);
+    }
+
+    // Remove the deal join data from the response
+    return (data ?? []).map(({ deal, ...quote }) => quote as QuoteWithLineItems);
+  }
+
   let query = supabase.from('quotes').select('*, line_items:quote_line_items(*)');
 
   if (filters?.company_id) {
