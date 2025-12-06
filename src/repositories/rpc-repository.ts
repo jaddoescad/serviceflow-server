@@ -409,6 +409,7 @@ export async function acceptChangeOrderWithInvoice(params: {
   signerName?: string | null;
   signerEmail?: string | null;
   signatureText?: string | null;
+  signatureType?: 'type' | 'draw' | null;
 }): Promise<AcceptChangeOrderResult> {
   const { data, error } = await supabase.rpc('accept_change_order_with_invoice', {
     p_change_order_id: params.changeOrderId,
@@ -416,6 +417,7 @@ export async function acceptChangeOrderWithInvoice(params: {
     p_signer_name: params.signerName || null,
     p_signer_email: params.signerEmail || null,
     p_signature_text: params.signatureText || null,
+    p_signature_type: params.signatureType || 'type',
   });
 
   if (error) {

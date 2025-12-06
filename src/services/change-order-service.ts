@@ -71,8 +71,9 @@ export async function acceptChangeOrder(params: {
   signerName?: string;
   signerEmail?: string;
   signatureText?: string;
+  signatureType?: 'type' | 'draw';
 }): Promise<ChangeOrderAcceptanceResult> {
-  const { changeOrderId, invoiceId, signerName, signerEmail, signatureText } = params;
+  const { changeOrderId, invoiceId, signerName, signerEmail, signatureText, signatureType } = params;
 
   // Use transactional RPC - all operations are atomic
   const result = await RpcRepository.acceptChangeOrderWithInvoice({
@@ -81,6 +82,7 @@ export async function acceptChangeOrder(params: {
     signerName,
     signerEmail,
     signatureText,
+    signatureType,
   });
 
   // Fetch the updated change order to return in expected format

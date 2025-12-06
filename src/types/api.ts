@@ -333,6 +333,8 @@ export interface InvoicePaymentRequest extends BaseEntity {
 
 export type ChangeOrderStatus = 'pending' | 'accepted';
 
+export type SignatureType = 'type' | 'draw';
+
 export interface ChangeOrder extends BaseEntity {
   company_id: string;
   deal_id: string;
@@ -343,6 +345,7 @@ export interface ChangeOrder extends BaseEntity {
   signer_name?: string | null;
   signer_email?: string | null;
   signature_text?: string | null;
+  signature_type?: SignatureType | null;
   accepted_at?: string | null;
 }
 

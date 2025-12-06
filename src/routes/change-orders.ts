@@ -60,7 +60,7 @@ router.patch(
   requireResourceAccess({ resourceType: 'change_order' }),
   asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const { signer_name, signer_email, signature_text, invoice_id } = req.body ?? {};
+    const { signer_name, signer_email, signature_text, signature_type, invoice_id } = req.body ?? {};
 
     // Fetch change order to get company_id and validate invoice_id
     const changeOrder = await ChangeOrderRepository.getChangeOrderById(id);
@@ -82,6 +82,7 @@ router.patch(
       signerName: signer_name,
       signerEmail: signer_email,
       signatureText: signature_text,
+      signatureType: signature_type,
     });
 
     // Send owner notification
