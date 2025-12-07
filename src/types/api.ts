@@ -48,6 +48,7 @@ export interface Company extends BaseEntity {
   openphone_phone_number_id?: string | null;
   openphone_phone_number?: string | null;
   openphone_enabled: boolean;
+  tax_rate?: number | null;
 }
 
 export interface CompanyMember extends BaseEntity {

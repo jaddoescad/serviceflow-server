@@ -93,6 +93,7 @@ const buildProposalSummaries = (quotes: QuoteForSummary[]): ProposalSummary[] =>
       ? {
           ...existing,
           quoteCount: existing.quoteCount + 1,
+          totalAmount: existing.totalAmount + totalAmount, // Sum all quote totals
         }
       : {
           dealId,
@@ -104,7 +105,7 @@ const buildProposalSummaries = (quotes: QuoteForSummary[]): ProposalSummary[] =>
         };
 
     if (isLatest) {
-      next.totalAmount = totalAmount;
+      // Only update latest status/quote info, not totalAmount (which is now a sum)
       next.latestStatus = quote.status;
       next.latestUpdatedAt = updatedAt;
       next.latestQuoteId = quote.id;
