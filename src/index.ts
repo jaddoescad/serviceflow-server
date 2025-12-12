@@ -12,6 +12,7 @@ import dealsRouter from './routes/deals';
 import dealAppointmentSchedulingRouter from './routes/deals/appointment-scheduling';
 import dealQuotesRouter from './routes/deals/quotes';
 import dealInvoicesRouter from './routes/deals/invoices';
+import dealMessagesRouter from './routes/deals/messages';
 import appointmentsCalendarRouter from './routes/appointments-calendar';
 import invoicesRouter from './routes/invoices';
 import crewsRouter from './routes/crews';
@@ -33,6 +34,7 @@ import workOrdersRouter from './routes/work-orders';
 import companyDealSourcesRouter from './routes/company-deal-sources';
 import dashboardRouter from './routes/dashboard';
 import pipelinesRouter from './routes/pipelines';
+import twilioWebhooksRouter from './routes/webhooks/twilio';
 
 dotenv.config();
 
@@ -41,6 +43,7 @@ const port = process.env.PORT || 3001;
 
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // Health Check (public)
 app.get('/health', (req, res) => {
@@ -50,6 +53,7 @@ app.get('/health', (req, res) => {
 // Public Routes (no authentication required)
 app.use('/quotes', quotePublicSharingRouter);
 app.use('/google-places', googlePlacesRouter);
+app.use('/webhooks/twilio', twilioWebhooksRouter);
 
 // Protected API Routes (authentication required)
 app.use('/companies', authenticateRequest, companiesRouter);
@@ -62,6 +66,7 @@ app.use('/deals', authenticateRequest, dealsRouter);
 app.use('/deals', authenticateRequest, dealAppointmentSchedulingRouter);
 app.use('/deals', authenticateRequest, dealQuotesRouter);
 app.use('/deals', authenticateRequest, dealInvoicesRouter);
+app.use('/deals', authenticateRequest, dealMessagesRouter);
 app.use('/appointments', authenticateRequest, appointmentsCalendarRouter);
 app.use('/invoices', authenticateRequest, invoicesRouter);
 app.use('/crews', authenticateRequest, crewsRouter);

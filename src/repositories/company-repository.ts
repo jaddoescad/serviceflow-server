@@ -95,6 +95,33 @@ export async function getCompanyTwilioSettings(companyId: string): Promise<{
 }
 
 /**
+ * Get company Twilio settings by Twilio phone number (used for inbound webhooks)
+ */
+export async function getCompanyTwilioSettingsByPhoneNumber(phoneNumber: string): Promise<{
+  id: string;
+  twilio_account_sid: string | null;
+  twilio_auth_token: string | null;
+  twilio_phone_number: string | null;
+  twilio_enabled: boolean;
+} | null> {
+  const { data, error } = await supabase
+    .from('companies')
+    .select('id, twilio_account_sid, twilio_auth_token, twilio_phone_number, twilio_enabled')
+    .eq('twilio_phone_number', phoneNumber)
+    .maybeSingle();
+
+  if (error) {
+    throw new DatabaseError('Failed to fetch company Twilio settings by phone number', error);
+  }
+
+  if (!data) {
+    return null;
+  }
+
+  return data as any;
+}
+
+/**
  * Create a new company
  */
 export async function createCompany(companyData: Partial<Company>): Promise<Company> {

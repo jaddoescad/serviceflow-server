@@ -124,9 +124,10 @@ export const sendTwilioMessage = async (params: {
   authToken: string;
   from: string;
   to: string;
-  body: string;
+  body?: string;
+  mediaUrls?: string[];
 }) => {
-  const { accountSid, authToken, from, to, body } = params;
+  const { accountSid, authToken, from, to, body, mediaUrls } = params;
 
   if (!from.trim()) {
     throw new Error('Twilio "from" number is required.');
@@ -136,14 +137,22 @@ export const sendTwilioMessage = async (params: {
     throw new Error('Recipient phone number is required.');
   }
 
-  if (!body.trim()) {
-    throw new Error('Message content is required.');
+  const messageBody = typeof body === 'string' ? body.trim() : '';
+  const mediaList = Array.isArray(mediaUrls) ? mediaUrls.filter((url) => typeof url === 'string' && url.trim()) : [];
+
+  if (!messageBody && mediaList.length === 0) {
+    throw new Error('Message content or media is required.');
   }
 
   const form = new URLSearchParams();
   form.set('From', from);
   form.set('To', to);
-  form.set('Body', body);
+  if (messageBody) {
+    form.set('Body', messageBody);
+  }
+  for (const url of mediaList) {
+    form.append('MediaUrl', url);
+  }
 
   return twilioRequest(accountSid, authToken, '/Messages.json', {
     method: 'POST',
@@ -154,4 +163,3 @@ export const sendTwilioMessage = async (params: {
     body: form.toString(),
   });
 };
-
