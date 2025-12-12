@@ -12,7 +12,7 @@ DECLARE
   v_invoice JSON;
   v_company_id UUID;
   v_email_settings JSON;
-  v_openphone_settings JSON;
+  v_twilio_settings JSON;
 BEGIN
   -- Get invoice with basic info
   SELECT json_build_object(
@@ -52,13 +52,13 @@ BEGIN
   FROM company_email_settings ces
   WHERE ces.company_id = v_company_id;
 
-  -- Get company OpenPhone settings
+  -- Get company Twilio settings
   SELECT json_build_object(
-    'openphone_api_key', co.openphone_api_key,
-    'openphone_phone_number_id', co.openphone_phone_number_id,
-    'openphone_phone_number', co.openphone_phone_number,
-    'openphone_enabled', co.openphone_enabled
-  ) INTO v_openphone_settings
+    'twilio_account_sid', co.twilio_account_sid,
+    'twilio_auth_token', co.twilio_auth_token,
+    'twilio_phone_number', co.twilio_phone_number,
+    'twilio_enabled', co.twilio_enabled
+  ) INTO v_twilio_settings
   FROM companies co
   WHERE co.id = v_company_id;
 
@@ -67,7 +67,7 @@ BEGIN
     'invoice', v_invoice,
     'companyId', v_company_id,
     'emailSettings', COALESCE(v_email_settings, '{}'::json),
-    'openphoneSettings', COALESCE(v_openphone_settings, '{}'::json)
+    'twilioSettings', COALESCE(v_twilio_settings, '{}'::json)
   );
 END;
 $$;
@@ -86,7 +86,7 @@ DECLARE
   v_payment_request JSON;
   v_company_id UUID;
   v_email_settings JSON;
-  v_openphone_settings JSON;
+  v_twilio_settings JSON;
 BEGIN
   -- Get payment request
   SELECT json_build_object(
@@ -129,13 +129,13 @@ BEGIN
   FROM company_email_settings ces
   WHERE ces.company_id = v_company_id;
 
-  -- Get company OpenPhone settings
+  -- Get company Twilio settings
   SELECT json_build_object(
-    'openphone_api_key', co.openphone_api_key,
-    'openphone_phone_number_id', co.openphone_phone_number_id,
-    'openphone_phone_number', co.openphone_phone_number,
-    'openphone_enabled', co.openphone_enabled
-  ) INTO v_openphone_settings
+    'twilio_account_sid', co.twilio_account_sid,
+    'twilio_auth_token', co.twilio_auth_token,
+    'twilio_phone_number', co.twilio_phone_number,
+    'twilio_enabled', co.twilio_enabled
+  ) INTO v_twilio_settings
   FROM companies co
   WHERE co.id = v_company_id;
 
@@ -144,7 +144,7 @@ BEGIN
     'paymentRequest', v_payment_request,
     'companyId', v_company_id,
     'emailSettings', COALESCE(v_email_settings, '{}'::json),
-    'openphoneSettings', COALESCE(v_openphone_settings, '{}'::json)
+    'twilioSettings', COALESCE(v_twilio_settings, '{}'::json)
   );
 END;
 $$;

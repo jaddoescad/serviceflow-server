@@ -1,5 +1,5 @@
 import { isPostmarkConfigured, sendProposalEmail } from '../lib/postmark';
-import { sendOpenPhoneMessage } from '../lib/openphone';
+import { sendTwilioMessage } from '../lib/twilio';
 import { getEmailContextForCompany } from './notification-service';
 import { formatSmsRecipient } from '../utils/formatting';
 import { getSmsSettingsForCompany } from './communication-service';
@@ -71,28 +71,30 @@ export async function sendAppointmentSms(params: {
 
   const phoneSettings = await getSmsSettingsForCompany(params.companyId);
 
-  if (!phoneSettings?.openphone_enabled || !phoneSettings?.openphone_api_key) {
-    const err = new Error('OpenPhone is not configured for this company.') as Error & { status?: number };
+  if (
+    !phoneSettings?.twilio_enabled ||
+    !phoneSettings?.twilio_account_sid ||
+    !phoneSettings?.twilio_auth_token
+  ) {
+    const err = new Error('Twilio is not configured for this company.') as Error & { status?: number };
     err.status = 400;
     throw err;
   }
 
-  const fromValue =
-    phoneSettings.openphone_phone_number_id?.trim() ||
-    phoneSettings.openphone_phone_number?.trim() ||
-    '';
+  const fromValue = phoneSettings.twilio_phone_number?.trim() || '';
 
   if (!fromValue) {
-    const err = new Error('OpenPhone phone number is not configured.') as Error & { status?: number };
+    const err = new Error('Twilio phone number is not configured.') as Error & { status?: number };
     err.status = 400;
     throw err;
   }
 
-  await sendOpenPhoneMessage({
-    apiKey: phoneSettings.openphone_api_key,
+  await sendTwilioMessage({
+    accountSid: phoneSettings.twilio_account_sid,
+    authToken: phoneSettings.twilio_auth_token,
     from: fromValue,
     to: formattedRecipient,
-    content: messageBody,
+    body: messageBody,
   });
 }
 

@@ -1,5 +1,5 @@
 import { sendProposalEmail, isPostmarkConfigured, stripButtonMarkers } from '../lib/postmark';
-import { sendOpenPhoneMessage } from '../lib/openphone';
+import { sendTwilioMessage } from '../lib/twilio';
 import { formatSmsRecipient } from '../utils/formatting';
 import { getEmailContextForCompany } from './notification-service';
 import * as CompanyRepository from '../repositories/company-repository';
@@ -14,7 +14,7 @@ import { AppError } from '../lib/errors';
  * Get SMS settings for a company
  */
 export const getSmsSettingsForCompany = async (companyId: string) => {
-  return await CompanyRepository.getCompanyOpenPhoneSettings(companyId);
+  return await CompanyRepository.getCompanyTwilioSettings(companyId);
 };
 
 /**
@@ -22,7 +22,7 @@ export const getSmsSettingsForCompany = async (companyId: string) => {
  */
 type CommunicationConfigResult = {
   emailContext?: Awaited<ReturnType<typeof getEmailContextForCompany>>;
-  smsConfig?: { apiKey: string; from: string };
+  smsConfig?: { accountSid: string; authToken: string; from: string };
 };
 
 /**
@@ -54,21 +54,23 @@ export const ensureCommunicationChannelsConfigured = async (params: {
   if (requireSms) {
     const phoneSettings = await getSmsSettingsForCompany(companyId);
 
-    if (!phoneSettings?.openphone_enabled || !phoneSettings?.openphone_api_key) {
-      throw new CommunicationError('OpenPhone is not configured for this company.');
+    if (
+      !phoneSettings?.twilio_enabled ||
+      !phoneSettings?.twilio_account_sid ||
+      !phoneSettings?.twilio_auth_token
+    ) {
+      throw new CommunicationError('Twilio is not configured for this company.');
     }
 
-    const fromValue =
-      phoneSettings.openphone_phone_number_id?.trim() ||
-      phoneSettings.openphone_phone_number?.trim() ||
-      '';
+    const fromValue = phoneSettings.twilio_phone_number?.trim() || '';
 
     if (!fromValue) {
-      throw new CommunicationError('OpenPhone phone number is not configured.');
+      throw new CommunicationError('Twilio phone number is not configured.');
     }
 
     result.smsConfig = {
-      apiKey: phoneSettings.openphone_api_key,
+      accountSid: phoneSettings.twilio_account_sid,
+      authToken: phoneSettings.twilio_auth_token,
       from: fromValue,
     };
   }
@@ -162,7 +164,7 @@ export async function sendEmail(params: {
 }
 
 /**
- * Send an SMS using company OpenPhone settings
+ * Send an SMS using company Twilio settings
  *
  * @throws {CommunicationError} If SMS is not configured or sending fails
  */
@@ -196,20 +198,21 @@ export async function sendSms(params: {
   });
 
   if (!communicationConfig.smsConfig) {
-    throw new CommunicationError('OpenPhone is not configured for this company.');
+    throw new CommunicationError('Twilio is not configured for this company.');
   }
 
   // Send SMS (strip button markers so URLs appear as plain text)
   try {
-    await sendOpenPhoneMessage({
-      apiKey: communicationConfig.smsConfig.apiKey,
+    await sendTwilioMessage({
+      accountSid: communicationConfig.smsConfig.accountSid,
+      authToken: communicationConfig.smsConfig.authToken,
       from: communicationConfig.smsConfig.from,
       to: formattedRecipient,
-      content: stripButtonMarkers(messageBody),
+      body: stripButtonMarkers(messageBody),
     });
   } catch (error) {
     const status = typeof (error as any)?.status === 'number' ? (error as any).status : 400;
-    console.error('Failed to send SMS via OpenPhone', error);
+    console.error('Failed to send SMS via Twilio', error);
     throw new CommunicationError('Failed to send SMS.', status);
   }
 }

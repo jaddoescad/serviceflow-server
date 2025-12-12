@@ -13,7 +13,7 @@ DECLARE
   v_deal JSON;
   v_company_id UUID;
   v_email_settings JSON;
-  v_openphone_settings JSON;
+  v_twilio_settings JSON;
 BEGIN
   -- Get quote with line items
   SELECT json_build_object(
@@ -91,13 +91,13 @@ BEGIN
   FROM company_email_settings ces
   WHERE ces.company_id = v_company_id;
 
-  -- Get company OpenPhone settings
+  -- Get company Twilio settings
   SELECT json_build_object(
-    'openphone_api_key', co.openphone_api_key,
-    'openphone_phone_number_id', co.openphone_phone_number_id,
-    'openphone_phone_number', co.openphone_phone_number,
-    'openphone_enabled', co.openphone_enabled
-  ) INTO v_openphone_settings
+    'twilio_account_sid', co.twilio_account_sid,
+    'twilio_auth_token', co.twilio_auth_token,
+    'twilio_phone_number', co.twilio_phone_number,
+    'twilio_enabled', co.twilio_enabled
+  ) INTO v_twilio_settings
   FROM companies co
   WHERE co.id = v_company_id;
 
@@ -106,7 +106,7 @@ BEGIN
     'quote', v_quote,
     'deal', v_deal,
     'emailSettings', COALESCE(v_email_settings, '{}'::json),
-    'openphoneSettings', COALESCE(v_openphone_settings, '{}'::json)
+    'twilioSettings', COALESCE(v_twilio_settings, '{}'::json)
   );
 END;
 $$;

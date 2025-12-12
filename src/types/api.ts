@@ -44,10 +44,10 @@ export interface Company extends BaseEntity {
   employee_count?: number | null;
   phone_number?: string | null;
   website?: string | null;
-  openphone_api_key?: string | null;
-  openphone_phone_number_id?: string | null;
-  openphone_phone_number?: string | null;
-  openphone_enabled: boolean;
+  twilio_account_sid?: string | null;
+  twilio_auth_token?: string | null;
+  twilio_phone_number?: string | null;
+  twilio_enabled: boolean;
   tax_rate?: number | null;
 }
 
@@ -566,7 +566,7 @@ export interface InvoiceDetail {
   paymentRequests: InvoicePaymentRequest[];
   lineItems: InvoiceLineItem[];
   emailSettings: EmailSettingsData;
-  openphoneSettings: OpenPhoneSettingsData;
+  twilioSettings: TwilioSettingsData;
 }
 
 export interface EmailSettingsData {
@@ -575,11 +575,11 @@ export interface EmailSettingsData {
   bcc_email?: string | null;
 }
 
-export interface OpenPhoneSettingsData {
-  openphone_api_key?: string | null;
-  openphone_phone_number_id?: string | null;
-  openphone_phone_number?: string | null;
-  openphone_enabled?: boolean;
+export interface TwilioSettingsData {
+  twilio_account_sid?: string | null;
+  twilio_auth_token?: string | null;
+  twilio_phone_number?: string | null;
+  twilio_enabled?: boolean;
 }
 
 /**
@@ -588,7 +588,7 @@ export interface OpenPhoneSettingsData {
 export interface InvoiceSendContext {
   invoice: Invoice;
   emailSettings: EmailSettingsData;
-  openphoneSettings: OpenPhoneSettingsData;
+  twilioSettings: TwilioSettingsData;
 }
 
 /**
@@ -597,7 +597,7 @@ export interface InvoiceSendContext {
 export interface PaymentRequestSendContext {
   paymentRequest: InvoicePaymentRequest;
   emailSettings: EmailSettingsData;
-  openphoneSettings: OpenPhoneSettingsData;
+  twilioSettings: TwilioSettingsData;
 }
 
 /**
@@ -838,21 +838,21 @@ export interface DatabaseErrorContext {
 }
 
 // ============================================================================
-// OPENPHONE TYPES
+// TWILIO TYPES
 // ============================================================================
 
-export interface OpenPhoneNumber {
+export interface TwilioNumber {
   id: string;
   phoneNumber: string;
   name?: string | null;
   type?: string | null;
 }
 
-export interface OpenPhoneSettings {
-  openphone_api_key?: string | null;
-  openphone_phone_number_id?: string | null;
-  openphone_phone_number?: string | null;
-  openphone_enabled?: boolean;
+export interface TwilioSettings {
+  twilio_account_sid?: string | null;
+  twilio_auth_token?: string | null;
+  twilio_phone_number?: string | null;
+  twilio_enabled?: boolean;
 }
 
 // ============================================================================

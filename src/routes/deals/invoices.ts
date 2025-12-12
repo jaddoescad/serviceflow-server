@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { asyncHandler } from '../../lib/async-handler';
 import { ValidationError, NotFoundError, UnauthorizedError, InternalError } from '../../lib/errors';
 import { isPostmarkConfigured, sendProposalEmail } from '../../lib/postmark';
-import { sendOpenPhoneMessage } from '../../lib/openphone';
+import { sendTwilioMessage } from '../../lib/twilio';
 import { sendOwnerNotification } from '../../services/notification-service';
 import { formatCurrency, formatSmsRecipient } from '../../utils/formatting';
 import { sanitizeUserId } from '../../utils/validation';
@@ -20,7 +20,7 @@ import * as InvoiceRepository from '../../repositories/invoice-repository';
 import * as CompanyRepository from '../../repositories/company-repository';
 import * as RpcRepository from '../../repositories/rpc-repository';
 import { requireResourceAccess } from '../../middleware/authorization';
-import type { EmailSettingsData, OpenPhoneSettingsData, Invoice, InvoicePaymentRequest } from '../../types/api';
+import type { EmailSettingsData, TwilioSettingsData, Invoice, InvoicePaymentRequest } from '../../types/api';
 
 // Helper to extract email settings from RPC result
 function extractEmailSettings(rpcEmailSettings: EmailSettingsData | null | undefined): EmailSettingsData {
@@ -31,13 +31,13 @@ function extractEmailSettings(rpcEmailSettings: EmailSettingsData | null | undef
   };
 }
 
-// Helper to extract OpenPhone settings from RPC result
-function extractOpenPhoneSettings(rpcSettings: OpenPhoneSettingsData | null | undefined): OpenPhoneSettingsData {
+// Helper to extract Twilio settings from RPC result
+function extractTwilioSettings(rpcSettings: TwilioSettingsData | null | undefined): TwilioSettingsData {
   return {
-    openphone_api_key: rpcSettings?.openphone_api_key ?? null,
-    openphone_phone_number_id: rpcSettings?.openphone_phone_number_id ?? null,
-    openphone_phone_number: rpcSettings?.openphone_phone_number ?? null,
-    openphone_enabled: rpcSettings?.openphone_enabled ?? false,
+    twilio_account_sid: rpcSettings?.twilio_account_sid ?? null,
+    twilio_auth_token: rpcSettings?.twilio_auth_token ?? null,
+    twilio_phone_number: rpcSettings?.twilio_phone_number ?? null,
+    twilio_enabled: rpcSettings?.twilio_enabled ?? false,
   };
 }
 
@@ -78,7 +78,7 @@ router.post(
 
     let invoice: Invoice | null;
     let effectiveEmailSettings: EmailSettingsData;
-    let phoneSettings: OpenPhoneSettingsData | null;
+    let phoneSettings: TwilioSettingsData | null;
 
     // Try RPC first for optimized single call
     const context = await RpcRepository.getInvoiceSendContext(invoiceId, dealId);
@@ -86,7 +86,7 @@ router.post(
     if (context) {
       invoice = context.invoice;
       effectiveEmailSettings = extractEmailSettings(context.emailSettings);
-      phoneSettings = extractOpenPhoneSettings(context.openphoneSettings);
+      phoneSettings = extractTwilioSettings(context.twilioSettings);
     } else {
       // Fallback: fetch data separately (original approach)
       invoice = await InvoiceRepository.getInvoiceByIdSimple(invoiceId);
@@ -98,7 +98,7 @@ router.post(
       const companyEmailSettings = await getCompanyEmailSettings(invoice.company_id);
       effectiveEmailSettings = extractEmailSettings(companyEmailSettings);
       try {
-        phoneSettings = await CompanyRepository.getCompanyOpenPhoneSettings(invoice.company_id);
+        phoneSettings = await CompanyRepository.getCompanyTwilioSettings(invoice.company_id);
       } catch (error) {
         phoneSettings = null;
       }
@@ -155,22 +155,26 @@ router.post(
       }
 
       // phoneSettings already fetched from RPC above
-      if (!phoneSettings?.openphone_enabled || !phoneSettings?.openphone_api_key) {
-        throw new ValidationError('OpenPhone is not configured for this company.');
+      if (
+        !phoneSettings?.twilio_enabled ||
+        !phoneSettings?.twilio_account_sid ||
+        !phoneSettings?.twilio_auth_token
+      ) {
+        throw new ValidationError('Twilio is not configured for this company.');
       }
 
-      const fromValue =
-        phoneSettings.openphone_phone_number_id?.trim() || phoneSettings.openphone_phone_number?.trim() || '';
+      const fromValue = phoneSettings.twilio_phone_number?.trim() || '';
 
       if (!fromValue) {
-        throw new ValidationError('OpenPhone phone number is not configured.');
+        throw new ValidationError('Twilio phone number is not configured.');
       }
 
-      await sendOpenPhoneMessage({
-        apiKey: phoneSettings.openphone_api_key,
+      await sendTwilioMessage({
+        accountSid: phoneSettings.twilio_account_sid,
+        authToken: phoneSettings.twilio_auth_token,
         from: fromValue,
         to: formattedRecipient,
-        content: messageBody,
+        body: messageBody,
       });
       sentText = true;
     }
@@ -253,7 +257,7 @@ router.post(
 
     let paymentRequest: InvoicePaymentRequest | null;
     let effectiveEmailSettings: EmailSettingsData;
-    let phoneSettings: OpenPhoneSettingsData | null;
+    let phoneSettings: TwilioSettingsData | null;
 
     // Try RPC first for optimized single call
     const context = await RpcRepository.getPaymentRequestSendContext(requestId, invoiceId, dealId);
@@ -261,7 +265,7 @@ router.post(
     if (context) {
       paymentRequest = context.paymentRequest;
       effectiveEmailSettings = extractEmailSettings(context.emailSettings);
-      phoneSettings = extractOpenPhoneSettings(context.openphoneSettings);
+      phoneSettings = extractTwilioSettings(context.twilioSettings);
     } else {
       // Fallback: fetch data separately (original approach)
       paymentRequest = await InvoiceRepository.getInvoicePaymentRequestById(requestId);
@@ -273,7 +277,7 @@ router.post(
       const companyEmailSettings = await getCompanyEmailSettings(paymentRequest.company_id);
       effectiveEmailSettings = extractEmailSettings(companyEmailSettings);
       try {
-        phoneSettings = await CompanyRepository.getCompanyOpenPhoneSettings(paymentRequest.company_id);
+        phoneSettings = await CompanyRepository.getCompanyTwilioSettings(paymentRequest.company_id);
       } catch (error) {
         phoneSettings = null;
       }
@@ -330,22 +334,26 @@ router.post(
       }
 
       // phoneSettings already fetched from RPC above
-      if (!phoneSettings?.openphone_enabled || !phoneSettings?.openphone_api_key) {
-        throw new ValidationError('OpenPhone is not configured for this company.');
+      if (
+        !phoneSettings?.twilio_enabled ||
+        !phoneSettings?.twilio_account_sid ||
+        !phoneSettings?.twilio_auth_token
+      ) {
+        throw new ValidationError('Twilio is not configured for this company.');
       }
 
-      const fromValue =
-        phoneSettings.openphone_phone_number_id?.trim() || phoneSettings.openphone_phone_number?.trim() || '';
+      const fromValue = phoneSettings.twilio_phone_number?.trim() || '';
 
       if (!fromValue) {
-        throw new ValidationError('OpenPhone phone number is not configured.');
+        throw new ValidationError('Twilio phone number is not configured.');
       }
 
-      await sendOpenPhoneMessage({
-        apiKey: phoneSettings.openphone_api_key,
+      await sendTwilioMessage({
+        accountSid: phoneSettings.twilio_account_sid,
+        authToken: phoneSettings.twilio_auth_token,
         from: fromValue,
         to: formattedRecipient,
-        content: messageBody,
+        body: messageBody,
       });
       sentText = true;
     }

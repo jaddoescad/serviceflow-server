@@ -137,7 +137,7 @@ router.post(
       throw new ValidationError('Recipient email is required');
     }
 
-    // TODO: integrate with email delivery (Postmark/OpenPhone)
+    // TODO: integrate with email delivery (Postmark/Twilio)
     res.json({
       status: 'queued',
       changeOrderId: id,

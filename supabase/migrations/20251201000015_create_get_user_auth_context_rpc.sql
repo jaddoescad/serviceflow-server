@@ -87,7 +87,7 @@ BEGIN
     'owner_last_name', c.owner_last_name,
     'phone_number', c.phone_number,
     'website', c.website,
-    'openphone_enabled', c.openphone_enabled,
+    'twilio_enabled', c.twilio_enabled,
     'created_at', c.created_at,
     'updated_at', c.updated_at
   ) INTO v_company

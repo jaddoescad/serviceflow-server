@@ -5,7 +5,7 @@ import { authenticateRequest } from './middleware/auth';
 import { errorHandler, notFoundHandler } from './middleware/error-handler';
 import companiesRouter from './routes/companies/index';
 import companyEmailSettingsRouter from './routes/companies/email-settings';
-import companyOpenPhoneRouter from './routes/companies/openphone';
+import companyTwilioRouter from './routes/companies/twilio';
 import companyBrandingRouter from './routes/companies/branding';
 import contactsRouter from './routes/contacts';
 import dealsRouter from './routes/deals';
@@ -54,7 +54,7 @@ app.use('/google-places', googlePlacesRouter);
 // Protected API Routes (authentication required)
 app.use('/companies', authenticateRequest, companiesRouter);
 app.use('/companies', authenticateRequest, companyEmailSettingsRouter);
-app.use('/companies', authenticateRequest, companyOpenPhoneRouter);
+app.use('/companies', authenticateRequest, companyTwilioRouter);
 app.use('/companies', authenticateRequest, companyBrandingRouter);
 app.use('/companies', authenticateRequest, companyDealSourcesRouter);
 app.use('/contacts', authenticateRequest, contactsRouter);

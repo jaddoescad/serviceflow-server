@@ -73,22 +73,22 @@ export async function getCompaniesByIds(companyIds: string[]): Promise<Company[]
 }
 
 /**
- * Get company OpenPhone settings
+ * Get company Twilio settings
  */
-export async function getCompanyOpenPhoneSettings(companyId: string): Promise<{
-  openphone_api_key: string | null;
-  openphone_phone_number_id: string | null;
-  openphone_phone_number: string | null;
-  openphone_enabled: boolean;
+export async function getCompanyTwilioSettings(companyId: string): Promise<{
+  twilio_account_sid: string | null;
+  twilio_auth_token: string | null;
+  twilio_phone_number: string | null;
+  twilio_enabled: boolean;
 } | null> {
   const { data, error } = await supabase
     .from('companies')
-    .select('openphone_api_key, openphone_phone_number_id, openphone_phone_number, openphone_enabled')
+    .select('twilio_account_sid, twilio_auth_token, twilio_phone_number, twilio_enabled')
     .eq('id', companyId)
     .maybeSingle();
 
   if (error) {
-    throw new DatabaseError('Failed to fetch company OpenPhone settings', error);
+    throw new DatabaseError('Failed to fetch company Twilio settings', error);
   }
 
   return data;

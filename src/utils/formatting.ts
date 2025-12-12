@@ -8,10 +8,10 @@ export const formatCurrency = (value: number): string => {
 };
 
 /**
- * Formats a phone number or contact identifier to E.164 format for SMS.
- * Handles US/Canada phone numbers and OpenPhone identifiers.
- * @param input - Phone number in various formats or OpenPhone ID (PN...)
- * @returns Formatted phone number in E.164 format (+1XXXXXXXXXX) or original PN ID, empty string if invalid
+ * Formats a phone number to E.164 format for SMS.
+ * Handles US/Canada phone numbers.
+ * @param input - Phone number in various formats
+ * @returns Formatted phone number in E.164 format (+1XXXXXXXXXX), empty string if invalid
  */
 export const formatSmsRecipient = (input: string): string => {
   if (!input) return '';
@@ -32,11 +32,6 @@ export const formatSmsRecipient = (input: string): string => {
 
   if (digits.length === 10) {
     return `+1${digits}`;
-  }
-
-  // Fallback: if it was a PN id (PN...) let it through as-is
-  if (/^PN/i.test(trimmed)) {
-    return trimmed;
   }
 
   return '';

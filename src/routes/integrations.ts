@@ -1,50 +1,62 @@
 import { Router } from 'express';
 import { asyncHandler } from '../lib/async-handler';
 import { ValidationError, AppError } from '../lib/errors';
-import { fetchOpenPhoneNumbers, normalizeApiKey, validateOpenPhoneApiKey } from '../lib/openphone';
+import { fetchTwilioNumbers, normalizeAccountSid, normalizeAuthToken, validateTwilioCredentials } from '../lib/twilio';
 
 const router = Router();
 
 router.post(
-  '/openphone/numbers',
+  '/twilio/numbers',
   asyncHandler(async (req, res) => {
-    const { apiKey } = req.body ?? {};
+    const { accountSid, authToken } = req.body ?? {};
 
-    const sanitizedKey =
-      typeof apiKey === 'string' && apiKey.trim() ? normalizeApiKey(apiKey) : null;
+    const sanitizedSid =
+      typeof accountSid === 'string' && accountSid.trim()
+        ? normalizeAccountSid(accountSid)
+        : null;
+    const sanitizedToken =
+      typeof authToken === 'string' && authToken.trim()
+        ? normalizeAuthToken(authToken)
+        : null;
 
-    if (!sanitizedKey) {
-      throw new ValidationError('apiKey is required');
+    if (!sanitizedSid || !sanitizedToken) {
+      throw new ValidationError('accountSid and authToken are required');
     }
 
     try {
-      const numbers = await fetchOpenPhoneNumbers(sanitizedKey);
+      const numbers = await fetchTwilioNumbers(sanitizedSid, sanitizedToken);
       res.json(numbers);
     } catch (err) {
       const status = typeof (err as any)?.status === 'number' ? (err as any).status : 400;
-      throw new AppError('Failed to load OpenPhone phone numbers.', status);
+      throw new AppError('Failed to load Twilio phone numbers.', status);
     }
   })
 );
 
 router.post(
-  '/openphone/test',
+  '/twilio/test',
   asyncHandler(async (req, res) => {
-    const { apiKey } = req.body ?? {};
+    const { accountSid, authToken } = req.body ?? {};
 
-    const sanitizedKey =
-      typeof apiKey === 'string' && apiKey.trim() ? normalizeApiKey(apiKey) : null;
+    const sanitizedSid =
+      typeof accountSid === 'string' && accountSid.trim()
+        ? normalizeAccountSid(accountSid)
+        : null;
+    const sanitizedToken =
+      typeof authToken === 'string' && authToken.trim()
+        ? normalizeAuthToken(authToken)
+        : null;
 
-    if (!sanitizedKey) {
-      throw new ValidationError('apiKey is required');
+    if (!sanitizedSid || !sanitizedToken) {
+      throw new ValidationError('accountSid and authToken are required');
     }
 
     try {
-      await validateOpenPhoneApiKey(sanitizedKey);
+      await validateTwilioCredentials(sanitizedSid, sanitizedToken);
       res.json({ success: true });
     } catch (err) {
       const status = typeof (err as any)?.status === 'number' ? (err as any).status : 400;
-      throw new AppError('OpenPhone API key is invalid.', status);
+      throw new AppError('Twilio credentials are invalid.', status);
     }
   })
 );

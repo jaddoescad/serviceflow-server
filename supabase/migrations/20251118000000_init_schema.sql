@@ -41,10 +41,10 @@ CREATE TABLE IF NOT EXISTS companies (
   tax_rate NUMERIC,
   proposal_terms_template_key TEXT,
   proposal_terms_template_content TEXT,
-  openphone_api_key TEXT,
-  openphone_phone_number_id TEXT,
-  openphone_phone_number TEXT,
-  openphone_enabled BOOLEAN DEFAULT FALSE,
+  twilio_account_sid TEXT,
+  twilio_auth_token TEXT,
+  twilio_phone_number TEXT,
+  twilio_enabled BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );

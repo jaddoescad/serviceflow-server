@@ -66,10 +66,10 @@ type CompanyRow = {
   phone_number: string | null;
   website: string | null;
   review_url: string | null;
-  openphone_api_key: string | null;
-  openphone_phone_number_id: string | null;
-  openphone_phone_number: string | null;
-  openphone_enabled: boolean | null;
+  twilio_account_sid: string | null;
+  twilio_auth_token: string | null;
+  twilio_phone_number: string | null;
+  twilio_enabled: boolean | null;
 };
 
 type SequenceRow = {
@@ -102,7 +102,7 @@ const corsHeaders = {
 };
 
 const POSTMARK_ENDPOINT = "https://api.postmarkapp.com/email";
-const OPENPHONE_API_BASE_URL = "https://api.openphone.com/v1";
+const TWILIO_API_BASE_URL = "https://api.twilio.com/2010-04-01/Accounts";
 
 const getEnv = (key: string, options?: { required?: boolean; defaultValue?: string }) => {
   const value = Deno.env.get(key) ?? options?.defaultValue ?? "";
@@ -142,7 +142,8 @@ const normalizePhone = (value: string | null | undefined) => {
   return `+${trimmed}`;
 };
 
-const normalizeOpenPhoneKey = (value: string | null | undefined) => (value ?? "").trim().replace(/^Bearer\s+/i, "");
+const normalizeTwilioAccountSid = (value: string | null | undefined) => (value ?? "").trim();
+const normalizeTwilioAuthToken = (value: string | null | undefined) => (value ?? "").trim();
 
 const normalizeTokenKey = (raw: string) =>
   raw
@@ -201,36 +202,48 @@ const sendPostmarkEmail = async (params: {
   }
 };
 
-const sendOpenPhoneMessage = async (params: { apiKey: string; from: string; to: string; content: string }) => {
-  const sanitizedKey = normalizeOpenPhoneKey(params.apiKey);
-  if (!sanitizedKey) {
-    throw new Error("OpenPhone API key is missing.");
+const toTwilioAuthHeader = (accountSid: string, authToken: string) =>
+  `Basic ${btoa(`${accountSid}:${authToken}`)}`;
+
+const parseTwilioError = async (response: Response) => {
+  try {
+    const payload = await response.json();
+    return payload?.message ?? payload?.Message ?? `Twilio request failed with status ${response.status}`;
+  } catch (_error) {
+    return `Twilio request failed with status ${response.status}`;
+  }
+};
+
+const sendTwilioMessage = async (params: {
+  accountSid: string;
+  authToken: string;
+  from: string;
+  to: string;
+  body: string;
+}) => {
+  const sanitizedSid = normalizeTwilioAccountSid(params.accountSid);
+  const sanitizedToken = normalizeTwilioAuthToken(params.authToken);
+  if (!sanitizedSid || !sanitizedToken) {
+    throw new Error("Twilio credentials are missing.");
   }
 
-  const response = await fetch(`${OPENPHONE_API_BASE_URL}/messages`, {
+  const form = new URLSearchParams();
+  form.set("From", params.from);
+  form.set("To", params.to);
+  form.set("Body", params.body);
+
+  const response = await fetch(`${TWILIO_API_BASE_URL}/${sanitizedSid}/Messages.json`, {
     method: "POST",
     headers: {
-      Authorization: sanitizedKey,
-      "X-Api-Key": sanitizedKey,
-      "Content-Type": "application/json",
+      Authorization: toTwilioAuthHeader(sanitizedSid, sanitizedToken),
+      "Content-Type": "application/x-www-form-urlencoded",
       Accept: "application/json",
     },
-    body: JSON.stringify({
-      from: params.from,
-      to: [params.to],
-      content: params.content,
-    }),
+    body: form.toString(),
   });
 
   if (!response.ok) {
-    let message = `OpenPhone request failed with status ${response.status}`;
-    try {
-      const payload = await response.json() as { error?: string; message?: string; errors?: Array<{ message?: string }> };
-      message = payload.error || payload.message || payload.errors?.[0]?.message || message;
-    } catch (_error) {
-      // ignore parse errors
-    }
-    throw new Error(message);
+    throw new Error(await parseTwilioError(response));
   }
 };
 
@@ -474,7 +487,7 @@ Deno.serve(async (request) => {
   if (companyIds.length > 0) {
     const { data: companies, error } = await adminClient
       .from(COMPANY_TABLE)
-      .select("id, name, phone_number, website, review_url, openphone_api_key, openphone_phone_number_id, openphone_phone_number, openphone_enabled")
+      .select("id, name, phone_number, website, review_url, twilio_account_sid, twilio_auth_token, twilio_phone_number, twilio_enabled")
       .in("id", companyIds);
 
     if (error) {
@@ -724,7 +737,14 @@ Deno.serve(async (request) => {
     const resolvedSmsBody = smsBodySource ? applyTemplate(smsBodySource, templateContext) : null;
 
     const canSendEmail = shouldSendEmail && resolvedSubject && resolvedEmailBody && toEmail && postmarkToken && postmarkFromEmail;
-    const canSendSms = shouldSendSms && resolvedSmsBody && toPhone && company?.openphone_enabled && company?.openphone_api_key;
+    const canSendSms =
+      shouldSendSms &&
+      resolvedSmsBody &&
+      toPhone &&
+      company?.twilio_enabled &&
+      company?.twilio_account_sid &&
+      company?.twilio_auth_token &&
+      company?.twilio_phone_number;
 
     const markAsProcessing = canSendEmail || canSendSms;
 
@@ -774,23 +794,26 @@ Deno.serve(async (request) => {
     }
 
     if (shouldSendSms) {
-      const openPhoneKey = company?.openphone_api_key ?? "";
-      const fromValue = company?.openphone_phone_number_id?.trim() || company?.openphone_phone_number?.trim() || "";
-      if (!company?.openphone_enabled || !openPhoneKey) {
-        sendErrors.push("OpenPhone is not configured.");
+      const accountSid = company?.twilio_account_sid ?? "";
+      const authToken = company?.twilio_auth_token ?? "";
+      const fromValue = company?.twilio_phone_number?.trim() || "";
+
+      if (!company?.twilio_enabled || !accountSid || !authToken) {
+        sendErrors.push("Twilio is not configured.");
       } else if (!resolvedSmsBody) {
         sendErrors.push("SMS body missing.");
       } else if (!toPhone) {
         sendErrors.push("Recipient phone missing.");
       } else if (!fromValue) {
-        sendErrors.push("OpenPhone sender number missing.");
+        sendErrors.push("Twilio sender number missing.");
       } else {
         try {
-          await sendOpenPhoneMessage({
-            apiKey: openPhoneKey,
+          await sendTwilioMessage({
+            accountSid,
+            authToken,
             from: fromValue,
             to: toPhone,
-            content: resolvedSmsBody,
+            body: resolvedSmsBody,
           });
         } catch (error) {
           console.error("Failed to send drip SMS", { jobId: job.id, error });
